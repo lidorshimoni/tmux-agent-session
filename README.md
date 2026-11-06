@@ -13,10 +13,11 @@ Whenever you run an AI coding agent harness such as **Antigravity CLI (`agy`)**,
 ## ✨ Features
 
 - **Multi-Harness Support**:
-  - **`agy` (Antigravity CLI)**: Resolves active conversation ID via `/proc/<pid>/fd` presence locks and queries `conversation_summaries.db` in read-only WAL mode.
-  - **`claude` (Claude Code)**: Extracts current session title or prompt from project history and terminal titles with clean directory fallbacks.
+  - **`agy` (Antigravity CLI)**: Resolves active conversation ID via `/proc/<pid>/fd` presence locks (with `lsof` fallback on macOS) and queries `conversation_summaries.db` in read-only WAL mode.
+  - **`claude` (Claude Code)**: Extracts current session title or prompt from project history transcripts (`~/.claude/projects/`) and terminal titles with clean directory fallbacks. Supports both text and structured message blocks.
+  - **`aider`**: Extracts the active task prompt from `.aider.chat.history.md` or terminal title, with directory fallbacks.
   - **`codex`**: Detects active session context or project workspace.
-  - **`aider`**: Displays current repository/workspace context or task title.
+- **Cross-Platform**: Seamless Linux (`/proc`) and macOS (`pgrep` & `lsof`) support.
 - **Zero Heavy Dependencies**: Built entirely with POSIX bash and Python 3 standard library (`sqlite3`, `json`, `os`, `re`). No extra pip modules or bloated background daemons needed.
 - **Safe & Non-blocking**: Uses read-only, non-blocking SQLite access (`mode=ro`) and native tmux `automatic-rename-format`, guaranteeing your databases never lock and your status line never stutters.
 - **Clean Fallbacks**: When switching between tools or shells (e.g. `zsh`, `vim`, `htop`), tabs smoothly reflect the running command.
@@ -63,7 +64,7 @@ Add any of these options to your `~/.tmux.conf` before `run '~/.tmux/plugins/tpm
 | :--- | :--- | :--- |
 | `@agent_session_format` | `#{agent}[#{title}]` | Format template for active agent windows. Supports `#{agent}`, `#{title}`, and `#{icon}`. |
 | `@agent_session_max_len` | `25` | Maximum length of session title before truncating with `...`. Set `0` for unlimited. |
-| `@agent_session_empty_title` | `new session` | Placeholder displayed when an agent is active but hasn't received a session title yet. |
+| `@agent_session_empty_title` | `new session` | Placeholder displayed when an agent is active but hasn't received a session title yet. Set to `folder` to display current project folder. |
 | `@agent_session_fallback` | `#{pane_current_command}` | Format used when no agent harness is active (e.g. shell or editor). |
 | `@agent_session_use_icons` | `off` | Enable agent icons (`on` or `off`). When enabled, `#{icon}` is populated (✦ for agy, ✻ for claude, ⚙ for codex, 󰚩 for aider). |
 | `@agent_session_status_interval` | *(inherited)* | Optional status bar refresh interval in seconds (e.g. `2`). |
@@ -83,7 +84,12 @@ set -g @agent_session_format '[#{agent}] #{title}'
 set -g @agent_session_max_len 30
 ```
 
-#### 3. Snappy Real-time Refresh
+#### 3. Display Project Folder When Session Is Untitled
+```tmux
+set -g @agent_session_empty_title 'folder'
+```
+
+#### 4. Snappy Real-time Refresh
 For faster tab name updates when an agent updates its title:
 ```tmux
 set -g status-interval 2
@@ -93,13 +99,13 @@ set -g status-interval 2
 
 ## 🔍 How It Works
 
-1. **Process Discovery**: When tmux updates its windows, the plugin identifies the active pane's process tree top-down.
+1. **Process Discovery**: When tmux updates its windows, the plugin traverses the active pane's process tree top-down, correctly matching agent harnesses even through wrappers or subprocesses while avoiding false positives on scripts.
 2. **Presence & State Resolution**:
-   - For `agy`, it reads open file descriptors pointing to `~/.gemini/antigravity-cli/presence/<conversation_id>.lock`.
-   - It queries `conversation_summaries.db` in SQLite read-only mode (`?mode=ro`) to retrieve the live title or preview.
-   - For `claude`, it checks `~/.claude/projects/` transcripts and terminal title escape sequences.
+   - For `agy`, it reads open file descriptors pointing to `~/.gemini/antigravity-cli/presence/<conversation_id>.lock` (handling unlinked/deleted descriptors and worker threads) and queries `conversation_summaries.db` in SQLite read-only mode (`?mode=ro`).
+   - For `claude`, it parses `~/.claude/projects/` transcripts and terminal title escape sequences.
+   - For `aider`, it parses `.aider.chat.history.md` for the active prompt.
 3. **Smart Formatting**: Titles are sanitized (ANSI stripped, control characters cleaned) and intelligently truncated at word boundaries.
-4. **Native Integration**: Leverages tmux's built-in `automatic-rename-format` and fast pane navigation hooks (`after-select-window`, `pane-focus-in`), ensuring zero tab flickering and instantaneous fallback when an agent process exits.
+4. **Native Integration**: Leverages tmux's built-in `automatic-rename-format` and fast pane navigation hooks (`after-select-window`, `after-select-pane`, `client-focus-in`), ensuring zero tab flickering and instantaneous fallback when an agent process exits.
 
 ---
 
